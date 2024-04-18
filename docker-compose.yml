@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+
+  postgres:
+    container_name: lms_postgres
+    image: postgres
+
+    env_file:
+      - ./study_app/.env
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASS}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+    ports:
+      - "127.0.0.1:5433:5432"
+
+    volumes:
+      - postgres_data:/data
+
+    restart: always
+
+  adminer:
+    container_name: lms_adminer
+    image: adminer:latest
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - 8080:8080
+
+  redis:
+    container_name: lms_redis
+    image: redis:7.2-alpine
+    volumes:
+      - redis_data:/data
+
+    restart: always
+
+  celery_worker:
+    container_name: lms_celery
+    build: study_app
+    env_file:
+      - study_app/.env
+    command: bash -c 'celery -A study_app worker --loglevel=info'
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+    restart: always
+
+  celery_beat:
+    container_name: lms_celery_beat
+    build: study_app
+    tty: true
+    command: celery -A study_app beat -l INFO -S django
+    env_file:
+      - study_app/.env
+    depends_on:
+      - redis
+      - backend
+
+  flower:
+    container_name: lms_flower
+    image: mher/flower:0.9.7
+    command: [ 'flower', '--broker=redis://redis:6379', '--port=5555' ]
+
+    ports:
+      - "5557:5555"
+    depends_on:
+      - redis
+
+    restart: always
+
+
+  backend:
+    container_name: lms_backend
+    build: study_app
+    restart: always
+    command: bash -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+
+    ports:
+      - "8000:8000"
+
+    depends_on:
+      - postgres
+    volumes:
+      - study_app:/study_app
+
+
+
+
+
+
+volumes:
+  postgres_data:
+  redis_data:
+  study_app:
+
+
+
+
+
